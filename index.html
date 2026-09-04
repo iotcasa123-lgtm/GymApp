@@ -394,7 +394,6 @@
 // ── CREDENCIALES ───────────────────────────────────────────────────
 const SB_URL = 'https://gftxuxutcbwbqxeswdsf.supabase.co';
 const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdmdHh1eHV0Y2J3YnF4ZXN3ZHNmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg1NDk5NzgsImV4cCI6MjEwNDEyNTk3OH0.8Zz9K-uRm0Bsfc7vgEZ4Bs3kc8_acxFE0N2tVuvM0oc'; //
-
 // ──────────────────────────────────────────────────────────────────
 
 let sb = null;
@@ -408,7 +407,7 @@ let activeTab = 'hoy';
 let currentSession = null; // { sessionId, routineId, routineName, sets: {} }
 let sessionTimer = null;
 let sessionSeconds = 0;
-let todayOverrideRoutineId = null; // null = use schedule
+// todayOverrideRoutineId kept for compat
 let editingRoutineId = null;
 let currentRoutineForExercise = null;
 let exercisePhotoFile = null;
@@ -464,8 +463,11 @@ async function loadAll() {
   ]);
   routines = r.data || [];
   exercises = e.data || [];
-  weekSchedule = {};
-  (w.data || []).forEach(d => weekSchedule[d.day_of_week] = d);
+  weekSchedule = { 0:[], 1:[], 2:[], 3:[], 4:[], 5:[], 6:[] };
+  (w.data || []).forEach(d => {
+    if (!weekSchedule[d.day_of_week]) weekSchedule[d.day_of_week] = [];
+    weekSchedule[d.day_of_week].push(d);
+  });
   sessions = s.data || [];
 }
 
@@ -634,35 +636,56 @@ async function renderSessionRecording(body) {
 function renderRutinas() {
   const body = document.getElementById('rutinas-body');
   const today = todayDOW();
-  let html = `<div class="sec-label"><span>Configuración semanal</span></div>
-    <div class="card" style="padding:8px 14px;">`;
+  let html = '<div class="sec-label"><span>Configuración semanal</span></div><div class="card" style="padding:8px 14px;">';
 
   DAYS.forEach((day, i) => {
-    const sched = weekSchedule[i];
-    const routine = sched && !sched.is_rest ? routines.find(r => r.id === sched.routine_id) : null;
-    const isRest = sched?.is_rest || (!sched && true);
+    const dayScheds = weekSchedule[i] || [];
     const isToday = i === today;
-    html += `<div class="week-row">
-      <div class="week-day ${isToday ? 'today' : ''}">${day}</div>
-      <select class="week-sel ${routine ? 'assigned' : ''}" onchange="saveSchedule(${i},this.value)">
-        <option value="">Descanso</option>
-        ${routines.map(r => `<option value="${r.id}" ${sched?.routine_id === r.id && !sched?.is_rest ? 'selected' : ''}>${r.name}</option>`).join('')}
-      </select>
-    </div>`;
-  });
-  html += `</div>`;
+    const assignedRoutines = dayScheds.filter(s => !s.is_rest && s.routine_id);
+    const isRest = assignedRoutines.length === 0;
 
-  html += `<div class="sec-label"><span>Mis rutinas</span><button class="sec-add" onclick="openNewRoutine()">+ Nueva</button></div>`;
+    html += '<div class="week-row" style="flex-wrap:wrap;gap:6px;">';
+    html += '<div class="week-day ' + (isToday ? 'today' : '') + '">' + day + '</div>';
+    html += '<div style="flex:1;display:flex;flex-direction:column;gap:5px;">';
+
+    if (assignedRoutines.length === 0) {
+      html += '<div style="font-size:12px;color:var(--hint);padding:5px 0;">Descanso</div>';
+    } else {
+      assignedRoutines.forEach(s => {
+        const r = routines.find(r => r.id === s.routine_id);
+        if (!r) return;
+        html += '<div style="display:flex;align-items:center;gap:6px;">';
+        html += '<div style="flex:1;background:var(--green-light);border:1px solid var(--green);border-radius:20px;padding:4px 10px;font-size:11px;color:var(--green-text);font-weight:600;">' + r.name + '</div>';
+        html += '<button onclick="removeSchedule(' + s.id + ')" style="background:none;border:none;color:var(--hint);font-size:14px;cursor:pointer;padding:2px 4px;">✕</button>';
+        html += '</div>';
+      });
+    }
+
+    // Add routine selector
+    const usedIds = assignedRoutines.map(s => s.routine_id);
+    const available = routines.filter(r => !usedIds.includes(r.id));
+    if (available.length) {
+      html += '<select class="week-sel" style="font-size:11px;padding:4px 10px;" onchange="addSchedule(' + i + ',this.value);this.value=''">';
+      html += '<option value="">+ Añadir rutina</option>';
+      available.forEach(r => { html += '<option value="' + r.id + '">' + r.name + '</option>'; });
+      html += '</select>';
+    }
+
+    html += '</div></div>';
+  });
+
+  html += '</div>';
+  html += '<div class="sec-label"><span>Mis rutinas</span><button class="sec-add" onclick="openNewRoutine()">+ Nueva</button></div>';
 
   if (!routines.length) {
-    html += `<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">No hay rutinas todavía.<br>Crea tu primera rutina.</div></div>`;
+    html += '<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">No hay rutinas todavía.<br>Crea tu primera rutina.</div></div>';
   } else {
     routines.forEach(r => {
-      html += `<div class="routine-row" onclick="openRoutineDetail(${r.id})">
-        <div class="routine-dot" style="background:${r.color}"></div>
-        <div class="routine-name">${r.name}</div>
-        <div class="routine-count">Ver ejercicios ›</div>
-      </div>`;
+      html += '<div class="routine-row" onclick="openRoutineDetail(' + r.id + ')">';
+      html += '<div class="routine-dot" style="background:' + r.color + '"></div>';
+      html += '<div class="routine-name">' + r.name + '</div>';
+      html += '<div class="routine-count">Ver ejercicios ›</div>';
+      html += '</div>';
     });
   }
   body.innerHTML = html;
@@ -1017,43 +1040,81 @@ async function saveExerciseToRoutine() {
 }
 
 // ── Schedule ──────────────────────────────────────────────────────
-async function saveSchedule(dow, routineId) {
-  const isRest = !routineId;
-  const existing = weekSchedule[dow];
-  if (existing) {
-    await sb.from('weekly_schedule').update({ routine_id: routineId || null, is_rest: isRest }).eq('id', existing.id);
-  } else {
-    await sb.from('weekly_schedule').insert({ user_id: userId, day_of_week: dow, routine_id: routineId || null, is_rest: isRest });
-  }
+async function addSchedule(dow, routineId) {
+  if (!routineId) return;
+  await sb.from('weekly_schedule').insert({ user_id: userId, day_of_week: dow, routine_id: parseInt(routineId), is_rest: false, sort_order: (weekSchedule[dow] || []).length });
+  await loadAll();
+  renderAll();
+}
+
+async function removeSchedule(schedId) {
+  await sb.from('weekly_schedule').delete().eq('id', schedId);
   await loadAll();
   renderAll();
 }
 
 // ── Change today routine ──────────────────────────────────────────
+// todayOverrideRoutineIds: null (use schedule) | '__rest__' | array of ids
+let todayOverrideRoutineIds = null;
+
 function openChangeRoutine() {
-  const current = getTodayRoutine();
-  let html = routines.map(r =>
-    `<div class="change-opt ${current && current.id === r.id ? 'selected' : ''}" onclick="setTodayRoutine(${r.id})">
-      ${r.name} ${current && current.id === r.id ? '<span style="font-size:10px;opacity:.6">(actual)</span>' : ''}
-    </div>`
-  ).join('');
-  html += `<div class="change-opt rest" onclick="setTodayRoutine(null)">Descanso hoy</div>`;
+  const current = getTodayRoutines();
+  const currentIds = current.map(r => r.id);
+  let html = '<div style="font-size:12px;color:var(--muted);margin-bottom:12px;">Selecciona una o más rutinas para hoy (anula la configuración semanal)</div>';
+  html += routines.map(r => {
+    const sel = currentIds.includes(r.id);
+    return '<div class="change-opt ' + (sel ? 'selected' : '') + '" onclick="toggleTodayRoutine(' + r.id + ')">' + r.name + (sel ? ' ✓' : '') + '</div>';
+  }).join('');
+  html += '<div class="change-opt rest" onclick="setTodayRest()">Descanso hoy</div>';
   document.getElementById('change-routine-options').innerHTML = html;
   openModal('modal-change-routine');
 }
 
-function setTodayRoutine(routineId) {
-  todayOverrideRoutineId = routineId === null ? '__rest__' : routineId;
+function toggleTodayRoutine(routineId) {
+  if (todayOverrideRoutineIds === null || todayOverrideRoutineIds === '__rest__') {
+    todayOverrideRoutineIds = [routineId];
+  } else {
+    const idx = todayOverrideRoutineIds.indexOf(routineId);
+    if (idx >= 0) todayOverrideRoutineIds.splice(idx, 1);
+    else todayOverrideRoutineIds.push(routineId);
+    if (todayOverrideRoutineIds.length === 0) todayOverrideRoutineIds = null;
+  }
+  // Re-render options
+  const current = getTodayRoutines();
+  const currentIds = current.map(r => r.id);
+  document.querySelectorAll('#change-routine-options .change-opt:not(.rest)').forEach((el, i) => {
+    const r = routines[i];
+    const sel = r && currentIds.includes(r.id);
+    el.className = 'change-opt' + (sel ? ' selected' : '');
+    el.textContent = r ? r.name + (sel ? ' ✓' : '') : el.textContent;
+  });
+  renderAll();
+}
+
+function setTodayRest() {
+  todayOverrideRoutineIds = '__rest__';
   closeModal('modal-change-routine');
   renderAll();
 }
 
+function setTodayRoutine(routineId) {
+  todayOverrideRoutineIds = routineId === null ? '__rest__' : [routineId];
+  closeModal('modal-change-routine');
+  renderAll();
+}
+
+function getTodayRoutines() {
+  if (todayOverrideRoutineIds === '__rest__') return [];
+  if (Array.isArray(todayOverrideRoutineIds)) {
+    return todayOverrideRoutineIds.map(id => routines.find(r => r.id === id)).filter(Boolean);
+  }
+  const scheds = weekSchedule[todayDOW()] || [];
+  return scheds.filter(s => !s.is_rest && s.routine_id).map(s => routines.find(r => r.id === s.routine_id)).filter(Boolean);
+}
+
 function getTodayRoutine() {
-  if (todayOverrideRoutineId === '__rest__') return null;
-  if (todayOverrideRoutineId) return routines.find(r => r.id === todayOverrideRoutineId) || null;
-  const sched = weekSchedule[todayDOW()];
-  if (!sched || sched.is_rest || !sched.routine_id) return null;
-  return routines.find(r => r.id === sched.routine_id) || null;
+  const all = getTodayRoutines();
+  return all.length > 0 ? all[0] : null;
 }
 
 // ── Media viewer ──────────────────────────────────────────────────
