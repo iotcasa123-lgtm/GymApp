@@ -665,7 +665,7 @@ function renderRutinas() {
     const usedIds = assignedRoutines.map(s => s.routine_id);
     const available = routines.filter(r => !usedIds.includes(r.id));
     if (available.length) {
-      html += '<select class="week-sel" style="font-size:11px;padding:4px 10px;" onchange="addSchedule(' + i + ',this.value);this.selectedIndex=0">';
+      html += "<select class='week-sel' style='font-size:11px;padding:4px 10px;' onchange='addSchedule(" + i + ",this.value);this.selectedIndex=0'>";
       html += '<option value="">+ Añadir rutina</option>';
       available.forEach(r => { html += '<option value="' + r.id + '">' + r.name + '</option>'; });
       html += '</select>';
